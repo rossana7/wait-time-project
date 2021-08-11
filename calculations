@@ -1,0 +1,814 @@
+##ignore this: install.packages('jsonlite', dependencies=TRUE, repos='http://cran.rstudio.com/')
+install.packages("lubridate")
+install.packages("qcc")
+install.packages("tidyverse")
+install.packages("dplyr")
+install.packages("magrittr")
+install.packages("tidyr")
+
+library(dplyr)
+library(magrittr)
+library(tidyr)
+library(qcc)
+library(lubridate)
+#library(tidyverse)
+
+
+# PROCEDURES FOR THE IN CONTROL CHART #
+
+df = read.csv("C:/Users/toty2/.vscode/Incontrol_data.csv",TRUE, ",")
+df
+# separates in control file into wards 1 and 2
+df = df[, -c(1)]
+idx = which(is.na(df[,'Ward_2']))
+ward1 = df[idx,]
+idx = which(is.na(df[,'Ward_1']))
+ward2 = df[idx,]
+ward1 = ward1[, c(1,2,4)]
+ward2 = ward2[, c(1,3,4)]
+
+# converts date strings into datetime objects using lubridate
+ward1$checkin <- ymd_hms(ward1$Check_In)
+ward1$arrival <- ymd_hms(ward1$Ward_1)
+ward1$dep <- ymd_hms(ward1$Departure)
+ward1 <- ward1[, -c(1,2,3)]
+
+ward2$checkin <- ymd_hms(ward2$Check_In)
+ward2$arrival <- ymd_hms(ward2$Ward_2)
+ward2$dep <- ymd_hms(ward2$Departure)
+ward2 <- ward2[, -c(1,2,3)]
+
+ward1 <- ward1 %>% select(-checkin)
+ward2 <- ward2 %>% select(-checkin)
+
+## IN-CONTROL WARD 1
+
+# checks that there is no datetime in arrivals equal to a datetime in departures
+for (i in seq(516)){
+  if(ward1$arrival[i] %in% ward1$dep | ward1$dep[i] %in% ward1$arrival){
+    print(i)
+  }
+}
+
+# creates matrix to classify arrivals and departures and
+# count how many people are at the ward at that specific time
+a = 1
+d = 1
+counts <- matrix(ncol = 3, nrow = 2000)
+colnames(counts) <- c("arr_dep", "time", "people")
+
+# determines if a time corresponds to an arrival or departure
+# and organizes datetime column in increasing order
+people = 0
+i = 0
+while (a <= length(ward1$arrival) + 1 & d <= 516){
+  i = i + 1
+  if(a < 517 & ward1$arrival[a] <= ward1$dep[d]){
+    people = people + 1
+    counts[i,1] = "arr"
+    counts[i,2] = toString(ward1$arrival[a])
+    counts[i,3] = people
+    a = a + 1
+  }else if (a == length(ward1$arrival) + 1 | ward1$arrival[a] > ward1$dep[d]){
+    people = people - 1
+    counts[i,1] = "dep"
+    counts[i,2] = toString(ward1$dep[d])
+    counts[i,3] = people
+    d = d + 1
+  }
+}
+
+# deletes NA values that came out of the previous function
+ids = which(is.na(counts[,'time']))
+counts <- counts[-ids, ]
+counts
+
+# converts matrix to data frame for better manipulation
+# also extracts the hour of each datetime to
+# further count the arrivals per hour
+counts <- as.data.frame(counts)
+counts$time <- ymd_hms(counts$time)
+counts$people <- as.numeric(counts$people)
+counts$hour <- hour(counts$time)
+counts
+
+# counts arrivals per hour and stores number of arrivals and departures in 
+# arrs1 and deps1 respectively. Then, stores our PI value (arrivals over number of observations)
+# in the vector ps1
+ps1 <- c()
+arrs1 <- c()
+deps1 <- c()
+for (h in seq(from = 0, to = 23)){
+  a = sum(counts$hour == h & counts$arr_dep == "arr")
+  s = sum(counts$hour == h)
+  ps1 <- append(ps1, a/s)
+  arrs1 <- append(arrs1, a)
+  deps1 <- append(deps1, s - a)
+}
+ps1
+
+## IN-CONTROL WARD 2
+
+# checks that there is no datetime in arrivals equal to a datetime in departures
+for (i in seq(length(ward2$arrival))){
+  if(ward2$arrival[i] %in% ward2$dep | ward2$dep[i] %in% ward2$arrival){
+    print(i)
+  }
+}
+
+# creates matrix to classify arrivals and departures and
+# count how many people are at the ward at that specific time
+a = 1
+d = 1
+counts2 <- matrix(ncol = 3, nrow = 2000)
+colnames(counts2) <- c("arr_dep", "time", "people")
+
+# determines if a time corresponds to an arrival or departure
+# and organizes datetime column in increasing order
+people = 0
+i = 0
+while (a <= length(ward2$arrival) + 1 & d <= length(ward2$arrival)){
+  i = i + 1
+  if(a < length(ward2$arrival) + 1 & ward2$arrival[a] <= ward2$dep[d]){
+    people = people + 1
+    counts2[i,1] = "arr"
+    counts2[i,2] = toString(ward2$arrival[a])
+    counts2[i,3] = people
+    a = a + 1
+  }else if (a == length(ward2$arrival) + 1 | ward2$arrival[a] > ward2$dep[d]){
+    people = people - 1
+    counts2[i,1] = "dep"
+    counts2[i,2] = toString(ward2$dep[d])
+    counts2[i,3] = people
+    d = d + 1
+  }
+}
+
+# deletes NA values that came out of the previous function
+ids = which(is.na(counts2[,'time']))
+counts2 <- counts2[-ids, ]
+counts2
+
+# converts matrix to data frame for better manipulation
+# also extracts the hour of each datetime to
+# further count the arrivals per hour
+counts2 <- as.data.frame(counts2)
+counts2$time <- ymd_hms(counts2$time)
+counts2$people <- as.numeric(counts2$people)
+counts2$hour <- hour(counts2$time)
+counts2
+
+# counts arrivals per hour and stores number of arrivals and departures in 
+# arrs2 and deps2 respectively. Then, stores our PI value (arrivals over number of observations)
+# in the vector ps2
+ps2 <- c()
+arrs2 <- c()
+deps2 <- c()
+for (h in seq(from = 0, to = 23)){
+  a = sum(counts2$hour == h & counts2$arr_dep == "arr")
+  s = sum(counts2$hour == h)
+  ps2 <- append(ps2, a/s)
+  arrs2 <- append(arrs2, a)
+  deps2 <- append(deps2, s - a)
+}
+ps2
+
+# PROCEDURES FOR THE TEST DATA 1 #
+
+df_1 = read.csv("C:/Users/toty2/.vscode/Test_data_1.csv", TRUE, ",")
+df_1
+# separates in control file into wards 1 and 2
+df_1 = df_1[, -c(1)]
+idx = which(is.na(df_1[,'Ward_2']))
+ward1_1 = df_1[idx,]
+idx = which(is.na(df_1[,'Ward_1']))
+ward2_1 = df_1[idx,]
+ward1_1 = ward1_1[, c(1,2,4)]
+ward2_1 = ward2_1[, c(1,3,4)]
+
+# converts date strings into datetime objects using lubridate
+ward1_1$checkin <- ymd_hms(ward1_1$Check_In)
+ward1_1$arrival <- ymd_hms(ward1_1$Ward_1)
+ward1_1$dep <- ymd_hms(ward1_1$Departure)
+ward1_1 <- ward1_1[, -c(1,2,3)]
+
+ward2_1$checkin <- ymd_hms(ward2_1$Check_In)
+ward2_1$arrival <- ymd_hms(ward2_1$Ward_2)
+ward2_1$dep <- ymd_hms(ward2_1$Departure)
+ward2_1 <- ward2_1[, -c(1,2,3)]
+
+ward1_1 <- ward1_1 %>% select(-checkin)
+ward2_1 <- ward2_1 %>% select(-checkin)
+
+## TEST DATA 1 WARD 1
+
+# checks that there is no datetime in arrivals equal to a datetime in departures
+for (i in seq(length(ward1_1$arrival))){
+  if(ward1_1$arrival[i] %in% ward1_1$dep | ward1_1$dep[i] %in% ward1_1$arrival){
+    print(i)
+  }
+}
+
+# creates matrix to classify arrivals and departures and
+# count how many people are at the ward at that specific time
+a = 1
+d = 1
+counts_1 <- matrix(ncol = 3, nrow = 2000)
+colnames(counts_1) <- c("arr_dep", "time", "people")
+
+# determines if a time corresponds to an arrival or departure
+# and organizes datetime column in increasing order
+people = 0
+i = 0
+while (a <= length(ward1_1$arrival) + 1 & d <= length(ward1_1$arrival)){
+  i = i + 1
+  if(a < length(ward1_1$arrival) + 1 & ward1_1$arrival[a] <= ward1_1$dep[d]){
+    people = people + 1
+    counts_1[i,1] = "arr"
+    counts_1[i,2] = toString(ward1_1$arrival[a])
+    counts_1[i,3] = people
+    a = a + 1
+  }else if (a == length(ward1_1$arrival) + 1 | ward1_1$arrival[a] > ward1_1$dep[d]){
+    people = people - 1
+    counts_1[i,1] = "dep"
+    counts_1[i,2] = toString(ward1_1$dep[d])
+    counts_1[i,3] = people
+    d = d + 1
+  }
+}
+
+# deletes NA values that came out of the previous function
+ids = which(is.na(counts_1[,3]))
+counts_1 <- counts_1[-ids, ]
+counts_1
+
+# converts matrix to data frame for better manipulation
+# also extracts the hour of each datetime to
+# further count the arrivals per hour
+counts_1 <- as.data.frame(counts_1)
+counts_1$time <- ymd_hms(counts_1$time)
+counts_1$people <- as.numeric(counts_1$people)
+counts_1$hour <- hour(counts_1$time)
+counts_1
+
+# counts arrivals per hour and stores number of arrivals and departures in 
+# arrs1_1 and deps1_1 respectively. Then, stores our PI value (arrivals over number of observations)
+# in the vector ps1_1
+ps1_1 <- c()
+arrs1_1 <- c()
+deps1_1 <- c()
+for (h in seq(from = 0, to = 23)){
+  a = sum(counts_1$hour == h & counts_1$arr_dep == "arr")
+  s = sum(counts_1$hour == h)
+  ps1_1 <- append(ps1_1, a/s)
+  arrs1_1 <- append(arrs1_1, a)
+  deps1_1 <- append(deps1_1, s - a)
+}
+ps1_1
+
+## TEST DATA 1 WARD 2
+
+# checks that there is no datetime in arrivals equal to a datetime in departures
+for (i in seq(length(ward2_1$arrival))){
+  if(ward2_1$arrival[i] %in% ward2_1$dep | ward2_1$dep[i] %in% ward2_1$arrival){
+    print(i)
+  }
+}
+
+# creates matrix to classify arrivals and departures and
+# count how many people are at the ward at that specific time
+a = 1
+d = 1
+counts2_1 <- matrix(ncol = 3, nrow = 2000)
+colnames(counts2_1) <- c("arr_dep", "time", "people")
+
+# determines if a time corresponds to an arrival or departure
+# and organizes datetime column in increasing order
+people = 0
+i = 0
+while (a <= length(ward2_1$arrival) + 1 & d <= length(ward2_1$arrival)){
+  i = i + 1
+  if(a < length(ward2_1$arrival) + 1 & ward2_1$arrival[a] <= ward2_1$dep[d]){
+    people = people + 1
+    counts2_1[i,1] = "arr"
+    counts2_1[i,2] = toString(ward2_1$arrival[a])
+    counts2_1[i,3] = people
+    a = a + 1
+  }else if (a == length(ward2_1$arrival) + 1 | ward2_1$arrival[a] > ward2_1$dep[d]){
+    people = people - 1
+    counts2_1[i,1] = "dep"
+    counts2_1[i,2] = toString(ward2_1$dep[d])
+    counts2_1[i,3] = people
+    d = d + 1
+  }
+}
+
+# deletes NA values that came out of the previous function
+ids = which(is.na(counts2_1[,3]))
+counts2_1 <- counts2_1[-ids, ]
+counts2_1
+
+# converts matrix to data frame for better manipulation
+# also extracts the hour of each datetime to
+# further count the arrivals per hour
+counts2_1 <- as.data.frame(counts2_1)
+counts2_1$time <- ymd_hms(counts2_1$time)
+counts2_1$people <- as.numeric(counts2_1$people)
+counts2_1$hour <- hour(counts2_1$time)
+counts2_1
+
+# counts arrivals per hour and stores number of arrivals and departures in 
+# arrs2_1 and deps2_1 respectively. Then, stores our PI value (arrivals over number of observations)
+# in the vector ps2_1
+ps2_1 <- c()
+arrs2_1 <- c()
+deps2_1 <- c()
+for (h in seq(from = 0, to = 23)){
+  a = sum(counts2_1$hour == h & counts2_1$arr_dep == "arr")
+  s = sum(counts2_1$hour == h)
+  ps2_1 <- append(ps2_1, a/s)
+  arrs2_1 <- append(arrs2_1, a)
+  deps2_1 <- append(deps2_1, s - a)
+}
+ps2_1
+
+# PROCEDURES FOR THE TEST DATA 2 #
+
+df_2 = read.csv("C:/Users/toty2/.vscode/Test_data_2.csv", TRUE, ",")
+df_2
+
+# separates in control file into wards 1 and 2
+df_2 = df_2[, -c(1)]
+idx = which(is.na(df_2[,'Ward_2']))
+ward1_2 = df_2[idx,]
+idx = which(is.na(df_2[,'Ward_1']))
+ward2_2 = df_2[idx,]
+ward1_2 = ward1_2[, c(1,2,4)]
+ward2_2 = ward2_2[, c(1,3,4)]
+
+# converts date strings into datetime objects using lubridate
+ward1_2$checkin <- ymd_hms(ward1_2$Check_In)
+ward1_2$arrival <- ymd_hms(ward1_2$Ward_1)
+ward1_2$dep <- ymd_hms(ward1_2$Departure)
+ward1_2 <- ward1_2[, -c(1,2,3)]
+
+ward2_2$checkin <- ymd_hms(ward2_2$Check_In)
+ward2_2$arrival <- ymd_hms(ward2_2$Ward_2)
+ward2_2$dep <- ymd_hms(ward2_2$Departure)
+ward2_2 <- ward2_2[, -c(1,2,3)]
+
+ward1_2 <- ward1_2 %>% select(-checkin)
+ward2_2 <- ward2_2 %>% select(-checkin)
+
+## TEST DATA 2 WARD 1
+
+# checks that there is no datetime in arrivals equal to a datetime in departures
+for (i in seq(length(ward1_2$arrival))){
+  if(ward1_2$arrival[i] %in% ward1_2$dep | ward1_2$dep[i] %in% ward1_2$arrival){
+    print(i)
+  }
+}
+
+# creates matrix to classify arrivals and departures and
+# count how many people are at the ward at that specific time
+a = 1
+d = 1
+counts_2 <- matrix(ncol = 3, nrow = 2000)
+colnames(counts_2) <- c("arr_dep", "time", "people")
+
+# determines if a time corresponds to an arrival or departure
+# and organizes datetime column in increasing order
+people = 0
+i = 0
+while (a <= length(ward1_2$arrival) + 1 & d <= length(ward1_2$arrival)){
+  i = i + 1
+  if(a < length(ward1_2$arrival) + 1 & ward1_2$arrival[a] <= ward1_2$dep[d]){
+    people = people + 1
+    counts_2[i,1] = "arr"
+    counts_2[i,2] = toString(ward1_2$arrival[a])
+    counts_2[i,3] = people
+    a = a + 1
+  }else if (a == length(ward1_2$arrival) + 1 | ward1_2$arrival[a] > ward1_2$dep[d]){
+    people = people - 1
+    counts_2[i,1] = "dep"
+    counts_2[i,2] = toString(ward1_2$dep[d])
+    counts_2[i,3] = people
+    d = d + 1
+  }
+}
+
+# deletes NA values that came out of the previous function
+ids = which(is.na(counts_2[,3]))
+counts_2 <- counts_2[-ids, ]
+counts_2
+
+# converts matrix to data frame for better manipulation
+# also extracts the hour of each datetime to
+# further count the arrivals per hour
+counts_2 <- as.data.frame(counts_2)
+counts_2$time <- ymd_hms(counts_2$time)
+counts_2$people <- as.numeric(counts_2$people)
+counts_2$hour <- hour(counts_2$time)
+counts_2
+
+# counts arrivals per hour and stores number of arrivals and departures in 
+# arrs1_2 and deps1_2 respectively. Then, stores our PI value (arrivals over number of observations)
+# in the vector ps1_2
+ps1_2 <- c()
+arrs1_2 <- c()
+deps1_2 <- c()
+for (h in seq(from = 0, to = 23)){
+  a = sum(counts_2$hour == h & counts_2$arr_dep == "arr")
+  s = sum(counts_2$hour == h)
+  ps1_2 <- append(ps1_2, a/s)
+  arrs1_2 <- append(arrs1_2, a)
+  deps1_2 <- append(deps1_2, s - a)
+}
+ps1_2
+
+## TEST DATA 2 WARD 2
+
+# checks that there is no datetime in arrivals equal to a datetime in departures
+for (i in seq(length(ward2_2$arrival))){
+  if(ward2_2$arrival[i] %in% ward2_2$dep | ward2_2$dep[i] %in% ward2_2$arrival){
+    print(i)
+  }
+}
+
+# creates matrix to classify arrivals and departures and
+# count how many people are at the ward at that specific time
+a = 1
+d = 1
+counts2_2 <- matrix(ncol = 3, nrow = 2000)
+colnames(counts2_2) <- c("arr_dep", "time", "people")
+
+# determines if a time corresponds to an arrival or departure
+# and organizes datetime column in increasing order
+people = 0
+i = 0
+while (a <= length(ward2_2$arrival) + 1 & d <= length(ward2_2$arrival)){
+  i = i + 1
+  if(a < length(ward2_2$arrival) + 1 & ward2_2$arrival[a] <= ward2_2$dep[d]){
+    people = people + 1
+    counts2_2[i,1] = "arr"
+    counts2_2[i,2] = toString(ward2_2$arrival[a])
+    counts2_2[i,3] = people
+    a = a + 1
+  }else if (a == length(ward2_2$arrival) + 1 | ward2_2$arrival[a] > ward2_2$dep[d]){
+    people = people - 1
+    counts2_2[i,1] = "dep"
+    counts2_2[i,2] = toString(ward2_2$dep[d])
+    counts2_2[i,3] = people
+    d = d + 1
+  }
+}
+
+# deletes NA values that came out of the previous function
+ids = which(is.na(counts2_2[,3]))
+counts2_2 <- counts2_2[-ids, ]
+counts2_2
+
+# converts matrix to data frame for better manipulation
+# also extracts the hour of each datetime to
+# further count the arrivals per hour
+counts2_2 <- as.data.frame(counts2_2)
+counts2_2$time <- ymd_hms(counts2_2$time)
+counts2_2$people <- as.numeric(counts2_2$people)
+counts2_2$hour <- hour(counts2_2$time)
+counts2_2
+
+# counts arrivals per hour and stores number of arrivals and departures in 
+# arrs2_2 and deps2_2 respectively. Then, stores our PI value (arrivals over number of observations)
+# in the vector ps2_2
+ps2_2 <- c()
+arrs2_2 <- c()
+deps2_2 <- c()
+for (h in seq(from = 0, to = 23)){
+  a = sum(counts2_2$hour == h & counts2_2$arr_dep == "arr")
+  s = sum(counts2_2$hour == h)
+  ps2_2 <- append(ps2_2, a/s)
+  arrs2_2 <- append(arrs2_2, a)
+  deps2_2 <- append(deps2_2, s - a)
+}
+ps2_2
+
+# PROCEDURES FOR THE TEST DATA 3 #
+
+df_3 = read.csv("C:/Users/toty2/.vscode/Test_data_3.csv", TRUE,",")
+df_3
+# separates in control file into wards 1 and 2
+df_3 = df_3[, -c(1)]
+idx = which(is.na(df_3[,'Ward_2']))
+ward1_3 = df_3[idx,]
+idx = which(is.na(df_3[,'Ward_1']))
+ward2_3 = df_3[idx,]
+ward1_3 = ward1_3[, c(1,2,4)]
+ward2_3 = ward2_3[, c(1,3,4)]
+
+# converts date strings into datetime objects using lubridate
+ward1_3$checkin <- ymd_hms(ward1_3$Check_In)
+ward1_3$arrival <- ymd_hms(ward1_3$Ward_1)
+ward1_3$dep <- ymd_hms(ward1_3$Departure)
+ward1_3 <- ward1_3[, -c(1,2,3)]
+
+ward2_3$checkin <- ymd_hms(ward2_3$Check_In)
+ward2_3$arrival <- ymd_hms(ward2_3$Ward_2)
+ward2_3$dep <- ymd_hms(ward2_3$Departure)
+ward2_3 <- ward2_3[, -c(1,2,3)]
+
+ward1_3 <- ward1_3 %>% select(-checkin)
+ward2_3 <- ward2_3 %>% select(-checkin)
+
+## TEST DATA 3 WARD 1
+
+# checks that there is no datetime in arrivals equal to a datetime in departures
+for (i in seq(length(ward1_3$arrival))){
+  if(ward1_3$arrival[i] %in% ward1_3$dep | ward1_3$dep[i] %in% ward1_3$arrival){
+    print(i)
+  }
+}
+
+# creates matrix to classify arrivals and departures and
+# count how many people are at the ward at that specific time
+a = 1
+d = 1
+counts_3 <- matrix(ncol = 3, nrow = 2000)
+colnames(counts_3) <- c("arr_dep", "time", "people")
+
+# determines if a time corresponds to an arrival or departure
+# and organizes datetime column in increasing order
+people = 0
+i = 0
+while (a <= length(ward1_3$arrival) + 1 & d <= length(ward1_3$arrival)){
+  i = i + 1
+  if(a < length(ward1_3$arrival) + 1 & ward1_3$arrival[a] <= ward1_3$dep[d]){
+    people = people + 1
+    counts_3[i,1] = "arr"
+    counts_3[i,2] = toString(ward1_3$arrival[a])
+    counts_3[i,3] = people
+    a = a + 1
+  }else if (a == length(ward1_3$arrival) + 1 | ward1_3$arrival[a] > ward1_3$dep[d]){
+    people = people - 1
+    counts_3[i,1] = "dep"
+    counts_3[i,2] = toString(ward1_3$dep[d])
+    counts_3[i,3] = people
+    d = d + 1
+  }
+}
+
+# deletes NA values that came out of the previous function
+ids = which(is.na(counts_3[,3]))
+counts_3 <- counts_3[-ids, ]
+counts_3
+
+# converts matrix to data frame for better manipulation
+# also extracts the hour of each datetime to
+# further count the arrivals per hour
+counts_3 <- as.data.frame(counts_3)
+counts_3$time <- ymd_hms(counts_3$time)
+counts_3$people <- as.numeric(counts_3$people)
+counts_3$hour <- hour(counts_3$time)
+counts_3
+
+# counts arrivals per hour and stores number of arrivals and departures in 
+# arrs1_3 and deps1_3 respectively. Then, stores our PI value (arrivals over number of observations)
+# in the vector ps1_3
+ps1_3 <- c()
+arrs1_3 <- c()
+deps1_3 <- c()
+for (h in seq(from = 0, to = 23)){
+  a = sum(counts_3$hour == h & counts_3$arr_dep == "arr")
+  s = sum(counts_3$hour == h)
+  ps1_3 <- append(ps1_3, a/s)
+  arrs1_3 <- append(arrs1_3, a)
+  deps1_3 <- append(deps1_3, s - a)
+}
+ps1_3
+
+## TEST DATA 3 WARD 2
+
+# checks that there is no datetime in arrivals equal to a datetime in departures
+for (i in seq(length(ward2_3$arrival))){
+  if(ward2_3$arrival[i] %in% ward2_3$dep | ward2_3$dep[i] %in% ward2_3$arrival){
+    print(i)
+  }
+}
+
+# creates matrix to classify arrivals and departures and
+# count how many people are at the ward at that specific time
+a = 1
+d = 1
+counts2_3 <- matrix(ncol = 3, nrow = 2000)
+colnames(counts2_3) <- c("arr_dep", "time", "people")
+
+# determines if a time corresponds to an arrival or departure
+# and organizes datetime column in increasing order
+people = 0
+i = 0
+while (a <= length(ward2_3$arrival) + 1 & d <= length(ward2_3$arrival)){
+  i = i + 1
+  if(a < length(ward2_3$arrival) + 1 & ward2_3$arrival[a] <= ward2_3$dep[d]){
+    people = people + 1
+    counts2_3[i,1] = "arr"
+    counts2_3[i,2] = toString(ward2_3$arrival[a])
+    counts2_3[i,3] = people
+    a = a + 1
+  }else if (a == length(ward2_3$arrival) + 1 | ward2_3$arrival[a] > ward2_3$dep[d]){
+    people = people - 1
+    counts2_3[i,1] = "dep"
+    counts2_3[i,2] = toString(ward2_3$dep[d])
+    counts2_3[i,3] = people
+    d = d + 1
+  }
+}
+
+# deletes NA values that came out of the previous function
+ids = which(is.na(counts2_3[,3]))
+counts2_3 <- counts2_3[-ids, ]
+counts2_3
+
+# converts matrix to data frame for better manipulation
+# also extracts the hour of each datetime to
+# further count the arrivals per hour
+counts2_3 <- as.data.frame(counts2_3)
+counts2_3$time <- ymd_hms(counts2_3$time)
+counts2_3$people <- as.numeric(counts2_3$people)
+counts2_3$hour <- hour(counts2_3$time)
+counts2_3
+
+# counts arrivals per hour and stores number of arrivals and departures in 
+# arrs2_3 and deps2_3 respectively. Then, stores our PI value (arrivals over number of observations)
+# in the vector ps2_3
+ps2_3 <- c()
+arrs2_3 <- c()
+deps2_3 <- c()
+for (h in seq(from = 0, to = 23)){
+  a = sum(counts2_3$hour == h & counts2_3$arr_dep == "arr")
+  s = sum(counts2_3$hour == h)
+  ps2_3 <- append(ps2_3, a/s)
+  arrs2_3 <- append(arrs2_3, a)
+  deps2_3 <- append(deps2_3, s - a)
+}
+ps2_3
+
+# PROCEDURES FOR CREATING WARD 1 EWMA CHARTS #
+# we used logarithmic function for the points plotted
+# we used qcc package, EWMA function for plotting the charts
+
+## TEST DATA 1
+# in this function we created the likelihood ratios
+# per hour and stored them in test1_ward1_log
+test1_ward1_log <- c()
+for (h in seq(24)){
+  ic = ps1[h] ^ arrs1[h] * (1 - ps1[h]) ^ deps1[h]
+  t1 = ps1_1[h] ^ arrs1_1[h] * (1 - ps1_1[h]) ^ deps1_1[h]
+  test1_ward1_log <- append(test1_ward1_log, log(t1/ic))
+}
+test1_ward1_log
+
+# EWMA Chart
+ewma(test1_ward1_log, lambda = 0.2, title = 'WARD 1 - EWMA Chart for test data 1', xlab = 'Time', ylab = 'log(test_data_1/in_control)')
+
+## TEST DATA 2 
+# in this function we created the likelihood ratios
+# per hour and stored them in test2_ward1_log
+test2_ward1_log <- c()
+for (h in seq(24)){
+  ic = ps1[h] ^ arrs1[h] * (1 - ps1[h]) ^ deps1[h]
+  t2 = ps1_2[h] ^ arrs1_2[h] * (1 - ps1_2[h]) ^ deps1_2[h]
+  test2_ward1_log <- append(test2_ward1_log, log(t2/ic))
+}
+test2_ward1_log
+
+# EWMA Chart
+ewma(test2_ward1_log, lambda = 0.2, title = 'WARD 1 - EWMA Chart for test data 2', xlab = 'Time', ylab = 'log(test_data_2/in_control)')
+
+## TEST DATA 3
+# in this function we created the likelihood ratios
+# per hour and stored them in test3_ward1_log
+test3_ward1_log <- c()
+for (h in seq(24)){
+  ic = ps1[h] ^ arrs1[h] * (1 - ps1[h]) ^ deps1[h]
+  t3 = ps1_3[h] ^ arrs1_3[h] * (1 - ps1_3[h]) ^ deps1_3[h]
+  test3_ward1_log <- append(test3_ward1_log, log(t3/ic))
+}
+test3_ward1_log
+
+# EWMA Chart
+ewma(test3_ward1_log, lambda = 0.2, title = 'WARD 1 - EWMA Chart for test data 3', xlab = 'Time', ylab = 'log(test_data_3/in_control)')
+
+# PROCEDURES FOR CREATING WARD 2 EWMA CHARTS #
+# we used logarithmic function for the points plotted
+# we used qcc package, EWMA function for plotting the charts
+
+## TEST DATA 1
+# in this function we created the likelihood ratios
+# per hour and stored them in test1_ward2_log
+test1_ward2_log <- c()
+for (h in seq(24)){
+  ic = ps2[h] ^ arrs2[h] * (1 - ps2[h]) ^ deps2[h]
+  t1 = ps2_1[h] ^ arrs2_1[h] * (1 - ps2_1[h]) ^ deps2_1[h]
+  test1_ward2_log <- append(test1_ward2_log, log(t1/ic))
+}
+test1_ward2_log
+
+# EWMA Chart
+ewma(test1_ward2_log, lambda = 0.2, title = 'WARD 2 - EWMA Chart for test data 1', xlab = 'Time', ylab = 'log(test_data_1/in_control)')
+
+## TEST DATA 2
+# in this function we created the likelihood ratios
+# per hour and stored them in test2_ward2_log
+test2_ward2_log <- c()
+for (h in seq(24)){
+  ic = ps2[h] ^ arrs2[h] * (1 - ps2[h]) ^ deps2[h]
+  t1 = ps2_2[h] ^ arrs2_2[h] * (1 - ps2_2[h]) ^ deps2_2[h]
+  test2_ward2_log <- append(test2_ward2_log, log(t1/ic))
+}
+test2_ward2_log
+
+# EWMA Chart
+ewma(test2_ward2_log, lambda = 0.2, title = 'WARD 2 - EWMA Chart for test data 2', xlab = 'Time', ylab = 'log(test_data_2/in_control)')
+
+## TEST DATA 3
+# in this function we created the likelihood ratios
+# per hour and stored them in test3_ward2_log
+test3_ward2_log <- c()
+for (h in seq(24)){
+  ic = ps2[h] ^ arrs2[h] * (1 - ps2[h]) ^ deps2[h]
+  t1 = ps2_3[h] ^ arrs2_3[h] * (1 - ps2_3[h]) ^ deps2_3[h]
+  test3_ward2_log <- append(test3_ward2_log, log(t1/ic))
+}
+test3_ward2_log
+
+# EWMA Chart
+ewma(test3_ward2_log, lambda = 0.2, title = 'WARD 2 - EWMA Chart for test data 3', xlab = 'Time', ylab = 'log(test_data_3/in_control)')
+
+
+# we created the charts and now we will analyze each of them 
+# to know what are the factors that make the chart go doop not whoop
+
+# EVALUATING THE DISTRIBUTION OF ALL PI VALUES #
+
+## WARD 1 PIs
+all = append(ps1, ps1_1)
+all = append(all, ps1_2)
+all = append(all, ps1_3)
+all
+
+# Histogram
+hist(all, main = 'Histogram of all p values - Ward 1', xlab = 'P\'s')
+max(all)
+min(all)
+
+## WARD 2 PIs
+all2 = append(ps2, ps2_1)
+all2 = append(all2, ps2_2)
+all2 = append(all2, ps2_3)
+all2
+
+# Histogram
+hist(all2, main = 'Histogram of all p values - Ward 2', xlab = 'P\'s')
+min(all2)
+max(all2)
+
+# DIFFERENCES IN TREATMENT TIME BETWEEN WARD 1 AND WARD 2 #
+# treatment time = departure time - time they were admitted in the ward
+
+## IN-CONTROL DATA
+# ward 1
+ward1_diff <- difftime(ward1$dep, ward1$arrival, units = 'mins')
+mean(ward1_diff)
+
+# ward 2
+ward2_diff <- difftime(ward2$dep, ward2$arrival, units = 'mins')
+mean(ward2_diff)
+
+## TEST DATA 1
+
+# ward 1
+ward1_1_diff <- difftime(ward1_1$dep, ward1_1$arrival, units = 'mins')
+mean(ward1_1_diff)
+
+# ward 2
+ward2_1_diff <- difftime(ward2_1$dep, ward2_1$arrival, units = 'mins')
+mean(ward2_1_diff)
+
+## TEST DATA 2
+
+# ward 1
+ward1_2_diff <- difftime(ward1_2$dep, ward1_2$arrival, units = 'mins')
+mean(ward1_2_diff)
+
+# ward 2
+ward2_2_diff <- difftime(ward2_2$dep, ward2_2$arrival, units = 'mins')
+mean(ward2_2_diff)
+
+## TEST DATA 3
+
+# ward 1
+ward1_3_diff <- difftime(ward1_3$dep, ward1_3$arrival, units = 'mins')
+mean(ward1_3_diff)
+
+# ward 2
+ward2_3_diff <- difftime(ward2_3$dep, ward2_3$arrival, units = 'mins')
+mean(ward2_3_diff)
